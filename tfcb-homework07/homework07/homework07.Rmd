@@ -1,0 +1,289 @@
+---
+title: 'MCB536: Homework 7'
+author: "Coohleen Coombes"
+date: "12/02/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***Total: 50 points***
+
+```{r}
+#BiocManager::install("ggbio")
+#install.packages("dplyr")
+#BiocManager::install("GenomeInfoDb", force =TRUE)
+#install.packages("purrr")
+```
+
+```{r}
+library(Biostrings)
+library(rtracklayer)
+library(plyranges)
+library(tidyverse)
+library(GenomicRanges)
+library(ggbio)
+library(GenomeInfoDb)
+library(dplyr)
+library(purrr)
+```
+
+Complete this homework by writing R code to complete the following tasks. Keep in mind:
+
+i. Empty chunks have been included where code is required
+ii. For Problem 2e, you should include a image (screen shot) instead of providing code
+iii. This homework requires use of 
+
+  - `BRCA.genome_wide_snp_6_broad_Level_3_scna.seg` (Problems 1, 2)
+  - `BRCA_IDC_cfDNA.bam` and `"BRCA_IDC_cfDNA.bai` (Problem 3)
+  - `GIAB_highconf_v.3.3.2.vcf.gz` (Problem 4)
+  
+iv. You will be graded on your code and output results (knitted .html or .pdf file). The assignment is worth 40 points total; partial credit can be awarded.
+
+This assignment is due on **Dec 2, 2021**. 
+
+# Problem 1: Overlaps between genomic regions and copy number alterations. (14 points total)
+
+## Preparation
+Load copy number segment results as shown in *2.1 BED format* of *Lecture16_GenomicData.Rmd*. You will use the same file as in the lecture notes, `BRCA.genome_wide_snp_6_broad_Level_3_scna.seg`. Here is code to get you started.
+
+```{r}
+#reads the file 
+segs <- read.table("BRCA.genome_wide_snp_6_broad_Level_3_scna.seg", header = TRUE)
+segs
+```
+
+```{r, message=FALSE}
+
+#reads file and passes the file to a variable called "segs"
+segs <- read.delim("BRCA.genome_wide_snp_6_broad_Level_3_scna.seg", as.is = TRUE)
+
+#change the class of chromosome to character
+mode(segs$Chromosome) <- "character" 
+
+
+#change chromosome 23 to an X chromosome because chromosome 23 is outdated genetic syntax
+segs[segs$Chromosome == 23, "Chromosome"] <- "X" 
+
+#convert a dataframe into a GRanges object
+segs.gr <- as(segs, "GRanges")
+segs.gr
+```
+
+## a. Find the segments in `segs.gr` that have *any* overlap with the region `chr8:128,746,347-128,755,810` (4 points)
+Print out the first five unique TCGA IDs.
+```{r}
+#creating a GRange object
+myGRange <- GRanges(seqnames = "8",
+                    ranges = IRanges(start = 128746347, end = 128755810))
+
+```
+
+
+```{r}
+#loading reference genome
+seqinfo <- Seqinfo(genome = "hg19")
+seqinfo <- keepStandardChromosomes(seqinfo) 
+seqlevelsStyle(seqinfo) <- "NCBI"
+seqinfo
+```
+
+
+
+```{r}
+#splitting the reference genome into tiles:
+
+#get the length of the chromosomes of the reference genome
+slen <- seqlengths(seqinfo) 
+
+#tile size = 500kb (this is set by the user)
+tileWidth <- 500000
+tiles <- tileGenome(seqlengths = slen, tilewidth = tileWidth,
+                    cut.last.tile.in.chrom = TRUE)
+tiles
+
+```
+```{r}
+#finding a tile from the reference genome for chromosome 8 greater than 128500000, but less than 129000000
+#tiles.subset <- tiles[seqnames(tiles) == "8" & start(tiles) >= 128500000 & end(tiles) <= 129000000]
+
+#tiles.subset
+```
+
+
+```{r}
+#finding any overlaps between reference genome (myGRange) and BRCA file(segs.gr) for chromosome 8 
+#arguments: find_overlaps(query, subject)
+#query is BRCA file and subject is reference genome
+
+segs.overlap <- find_overlaps(segs.gr, myGRange)
+#head(segs.overlap,5)
+segs.overlap[1:5]
+```
+
+
+
+## b. Find the mean of the `Segment_Mean` values for copy number segments that have *any* overlap with the region chr17:37,842,337-37,886,915. (4 points)
+```{r}
+#finding segments in chromosome 17
+#tiles_subset_17 <- tiles[seqnames(tiles) == "17" & start(tiles) >= 37500000 & end(tiles) <= 38000000]
+#segs_overlap_17 <- find_overlaps(segs.gr, tiles_subset_17)
+#segs_overlap_17
+
+#creating a GRange object for chromosome 17
+myGRange_17 <- GRanges(seqnames = "17",
+                    ranges = IRanges(start = 37842337, end = 37886915))
+
+segs_overlap_17 <- find_overlaps(segs.gr, myGRange_17)
+segs_overlap_17
+
+#finding the mean in segment_mean for overlap in chromosome 17
+segs_means_17 <- segs_overlap_17$Segment_Mean
+mean <- mean(segs_means_17)
+mean
+```
+
+
+## c. Find the patient sample distribution of copy number for `PIK3CA` (hg19). (6 points)
+Find the counts of samples with deletion (D; `Segment_Mean < -0.3`), neutral (N; `Segment_Mean >= -0.3 & Segment_Mean <= 0.3`), gain (G; `Segment_Mean > 0.3`) segments that have `any` overlap with `PIK3CA` gene coordinates.  
+
+```{r}
+myGRange_PIK3CA <- GRanges(seqnames = "3",
+                    ranges = IRanges(start =  178865902, end = 178957881))
+```
+
+```{r}
+# PIK3CA coordinates (found on NCBI): chromosome 3 from 178865902-178957881
+
+
+segs_overlap_PIK3CA <- find_overlaps(segs.gr, myGRange_PIK3CA)
+segs_overlap_PIK3CA
+
+#finding distributions
+deletion <- segs_overlap_PIK3CA[segs_overlap_PIK3CA$Segment_Mean < -0.3]
+deletion
+
+neutral <- segs_overlap_PIK3CA[segs_overlap_PIK3CA$Segment_Mean >= -0.3 & segs_overlap_PIK3CA$Segment_Mean <= 0.3]
+neutral
+
+gain <- segs_overlap_PIK3CA[segs_overlap_PIK3CA$Segment_Mean > 0.3]
+gain
+```
+
+
+# Problem 2: Frequency of copy number alteration events within genomic regions. (12 points total) 
+
+This problem will continue to use the copy number data stored in `segs.gr`.
+
+## a. Create a genome-wide tile of 1Mb windows for the human genome (`hg19`). (4 points)
+See *3.1 Tiling the genome* of *Lecture16_GenomicData.Rmd* for hints.
+```{r}
+#splitting the reference genome into 1Mb tiles:
+
+#get the length of the chromosomes of the reference genome
+slen <- seqlengths(seqinfo) 
+
+#tile size = 1Mb (this is set by the user)
+tileWidth_1Mb <- 1000000
+tiles_1Mb <- tileGenome(seqlengths = slen, tilewidth = tileWidth_1Mb,
+                    cut.last.tile.in.chrom = TRUE)
+tiles_1Mb
+```
+
+## b. Find the 1Mb window with the most frequent overlapping deletions. (4 points)
+Find the 1Mb windows with `any` overlap with deletion copy number segments. Assume a deletion segment is defined as a segment in `segs.gr` having `Segment_Mean < -0.3`. 
+
+Return one of the 1Mb window `Granges` entry with the highest frequency (count) of deletion segments.
+
+Hint: Subset the `segs.gr` to only rows with `Segment_Mean < -0.3`.
+```{r}
+library(dplyr)
+segs_deletion <- segs.gr[segs.gr$Segment_Mean < -0.3]
+segs_deletion
+
+segs_overlap <- findOverlaps(tiles_1Mb, segs_deletion,)
+segs_overlap
+
+#Help from Natalie Thulin:
+
+grouped <- as_tibble(segs_overlap) %>% 
+  group_by(queryHits)
+    grouped
+
+
+count <- count(grouped, sort=TRUE)
+count
+
+
+ID <- count %>%
+  pluck (1,1)
+
+tiles[ID]
+
+
+```
+
+## c. Visually inspect the deletion overlap result from part (b) using IGV. (4 points)
+Provide a screen shot of IGV at the 1Mb window with the most frequent overlap with deletion segments. The image should include the segments from `BRCA.genome_wide_snp_6_broad_Level_3_scna.seg` loaded. 
+
+#trying to load IGV image:
+
+![IGV](/Users/coohleencoombes/Desktop/Git/tfcb-homework07/homework07/hw7.png)
+
+
+
+# Problem 3: Reading and extracting sequencing data (8 points total)
+```{r}
+BiocManager::install("Rsamtools", force=TRUE)
+```
+
+## Preparation
+```{r, message=FALSE}
+library(Rsamtools)
+bamFile <- "BRCA_IDC_cfDNA.bam"
+```
+
+## a. Retrieve reads in the BAM file `BRCA_IDC_cfDNA.bam` at `chr12:25,380,269-25,380,308`. (4 points)
+Use the same settings for `scanBamWhat()`, `scanBamFlag()`, and `ScanBamParam()` as in Section `1` of `Lecture16_Rsamtools.Rmd`.
+```{r}
+whichRanges <- GRanges(seqnames = "12",
+                       IRanges(start = 25380269, end = 25380308))
+whichRanges
+
+
+whatFields <- scanBamWhat()
+
+flag <- scanBamFlag(isDuplicate = FALSE)  # exclude PCR duplicate reads
+
+
+param <- ScanBamParam(flag = flag, which = whichRanges, what = whatFields,  
+             mapqFilter = 30, tag = c("RG"))
+param
+
+bam <- scanBam(bamFile, param = param)
+```
+
+## b. What is the fraction of G+C bases? (4 points)
+Count the number of G and C bases in the read sequence from part (a).
+Hints: 
+
+i. To get the sequence of `DNAStringSet`, use `as.character(unlist(x))`.  
+ii. `strsplit()` function splits a string into individual characters.
+iii. `nchar()` returns the length of a string.
+```{r}
+#Help from Jobelle Peralta
+DNAStringSet <- as.character(bam[[1]]$seq)
+DNAStringSet
+bases <- unlist(strsplit(DNAStringSet, split = ""))
+
+GC <- nchar(DNAStringSet)
+GC
+
+GC_ratio <-(sum(bases == "G")+ sum(bases =="C"))/length(bases)
+GC_ratio
+
+```
